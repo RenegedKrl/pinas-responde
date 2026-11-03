@@ -10,7 +10,8 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const { data: acc } = await sb.from("ig_accounts")
     .select("username, profile_picture_url, token_expires_at").eq("user_id", user!.id).maybeSingle();
 
-  const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
+  const expired = !acc?.token_expires_at || new Date(acc.token_expires_at).getTime() < Date.now();
+  const since =new Date(Date.now() - 7 * 86_400_000).toISOString();
   const count = async (type: string) =>
     (await sb.from("events").select("id", { count: "exact", head: true }).eq("type", type).gte("created_at", since)).count ?? 0;
   const [replies, dms, clicks, errors] = await Promise.all([
@@ -31,11 +32,15 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
             {acc.profile_picture_url && <img src={acc.profile_picture_url} alt="" width={44} height={44} style={{ borderRadius: 99 }} />}
             <div style={{ flex: 1 }}>
               <strong>@{acc.username}</strong>
-              <div className="muted" style={{ fontSize: 13 }}>
-                Token válido até {acc.token_expires_at ? new Date(acc.token_expires_at).toLocaleDateString("pt-BR") : "?"} (renova sozinho)
-              </div>
+              {expired ? (
+                <div style={{ fontSize: 13, color: "var(--err)" }}>Conexão expirada. Clique em Reconectar.</div>
+              ) : (
+                <div style={{ fontSize: 13, color: "var(--ok)" }}>
+                  ● Conectado 24h · renova sozinho (próxima validade {new Date(acc.token_expires_at!).toLocaleDateString("pt-BR")})
+                </div>
+              )}
             </div>
-            <a className="btn btn-sm" href="/api/instagram/connect">Reconectar</a>
+            <a className={`btn btn-sm ${expired ? "btn-primary" : ""}`} href="/api/instagram/connect">Reconectar</a>
             <DisconnectButton />
           </div>
         ) : (
