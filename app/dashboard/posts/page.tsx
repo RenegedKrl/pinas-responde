@@ -6,7 +6,7 @@ import PostPreview from "@/components/PostPreview";
 interface Item { url: string; type: "image" | "video"; cover?: string; thumb_offset?: number; share_to_feed?: boolean }
 interface Post {
   id: string; kind: string; items: Item[]; caption: string; scheduled_at: string | null;
-  status: string; permalink: string | null; error: string | null; automation: any; published_at: string | null;
+  status: string; permalink: string | null; targets?: string[]; tiktok?: { status?: string; error?: string }; error: string | null; automation: any; published_at: string | null;
 }
 
 const STATUS: Record<string, [string, string]> = {
@@ -53,6 +53,11 @@ export default function Posts() {
   const [cover, setCover] = useState("");
   const [offset, setOffset] = useState(0);
   const [toFeed, setToFeed] = useState(true);
+  const [targets, setTargets] = useState<string[]>(["instagram"]);
+  const [ttOk, setTtOk] = useState(false);
+  const toggle = (t: string) => setTargets((x) => x.includes(t) ? x.filter((y) => y !== t) : [...x, t]);
+  const ttWarn = targets.includes("tiktok") && items.filter((i) => i.type === "video").length > 1
+    ? "O TikTok não aceita carrossel de vídeos: esse post vai falhar lá (no Instagram sai normal)." : "";
   const isReels = items.length === 1 && items[0].type === "video";
   const kindLabel = !items.length ? "" : items.length > 1 ? `Carrossel (${items.length})` : isReels ? "Reels" : "Post de imagem";
 
@@ -73,6 +78,7 @@ export default function Posts() {
   useEffect(() => {
     load();
     fetch("/api/posts/limit").then((r) => r.json()).then(setLimit);
+    sb.from("tiktok_accounts").select("user_id").maybeSingle().then(({ data }) => setTtOk(!!data));
     const t = setInterval(load, 15000);
     return () => clearInterval(t);
   }, []);
@@ -98,6 +104,7 @@ export default function Posts() {
   async function create(mode: "draft" | "scheduled" | "now") {
     if (!items.length) return setMsg("Adicione pelo menos uma imagem ou vídeo.");
     if (items.length > 10) return setMsg("Máximo de 10 itens.");
+    if (!targets.length) return setMsg("Escolha pelo menos uma rede.");
     if (mode === "now" && !confirm("Publicar agora no Instagram? Isso fica público.")) return;
     const kind = items.length > 1 ? "CAROUSEL" : items[0].type === "video" ? "REELS" : "IMAGE";
     const { data: u } = await sb.auth.getUser();
@@ -114,13 +121,13 @@ export default function Posts() {
       ? [{ ...items[0], share_to_feed: toFeed, ...(cover ? { cover } : { thumb_offset: Math.round(offset * 1000) }) }]
       : items;
     const { data, error } = await sb.from("posts").insert({
-      user_id: u.user!.id, kind, items: final, caption,
+      user_id: u.user!.id, kind, items: final, caption, targets,
       status: mode === "draft" ? "draft" : "scheduled",
       scheduled_at: mode === "draft" ? null : mode === "now" ? new Date().toISOString() : new Date(when).toISOString(),
       automation,
     }).select("id").single();
     if (error) return setMsg("Erro: " + error.message);
-    setItems([]); setCaption(""); setKeyword(""); setLink(""); setCover(""); setOffset(0); setToFeed(true);
+    setItems([]); setCaption(""); setKeyword(""); setLink(""); setCover(""); setOffset(0); setToFeed(true); setTargets(["instagram"]);
     if (mode === "now") { setMsg("Publicando..."); await fetch(`/api/posts/${data.id}/publish-now`, { method: "POST" }); setMsg(""); }
     load();
   }
@@ -186,6 +193,17 @@ export default function Posts() {
             </div>
           </div>
         )}
+        <label>Onde postar</label>
+        <div className="row" style={{ gap: 16 }}>
+          {[["instagram", "Instagram"], ["tiktok", "TikTok"]].map(([v, l]) => (
+            <label key={v} className="row" style={{ gap: 6, margin: 0 }}>
+              <input type="checkbox" style={{ width: "auto" }} checked={targets.includes(v)}
+                disabled={v === "tiktok" && !ttOk} onChange={() => toggle(v)} />
+              {l}{v === "tiktok" && !ttOk && <span className="muted"> (conecte na aba Início)</span>}
+            </label>
+          ))}
+        </div>
+        {ttWarn && <div className="alert alert-err" style={{ marginTop: 8 }}>{ttWarn}</div>}
         <label>Legenda</label>
         <textarea value={caption} maxLength={2200} style={{ minHeight: 140 }} onChange={(e) => setCaption(e.target.value)} />
         <div className="grid grid-4">
@@ -203,7 +221,7 @@ export default function Posts() {
 
       <div className="card" style={{ padding: 0, overflowX: "auto" }}>
         <table>
-          <thead><tr><th></th><th>Legenda</th><th>Tipo</th><th>Quando</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th></th><th>Legenda</th><th>Redes</th><th>Tipo</th><th>Quando</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {posts.map((p) => (
               <tr key={p.id}>
@@ -211,6 +229,9 @@ export default function Posts() {
                   ? <video src={p.items[0].url} muted width={44} height={55} style={{ objectFit: "cover", borderRadius: 6 }} />
                   : <img src={p.items[0].url} alt="" width={44} height={55} style={{ objectFit: "cover", borderRadius: 6 }} />)}</td>
                 <td className="muted" style={{ cursor: "pointer" }} onClick={() => setOpen(p)}>{p.caption.slice(0, 70)}{p.automation?.keywords?.[0] && <div className="chip" style={{ marginTop: 4 }}>CTA: {p.automation.keywords[0]}</div>}</td>
+                <td>{(p.targets ?? ["instagram"]).map((t) => (
+                  <div key={t} className="chip" style={{ marginBottom: 2 }}>{t === "tiktok" ? `TikTok${p.tiktok?.status ? " · " + ({ processing: "enviando", published: "ok", error: "erro" } as any)[p.tiktok.status] : ""}` : "Instagram"}</div>
+                ))}{p.tiktok?.error && <div style={{ color: "var(--err)", fontSize: 12, maxWidth: 220 }}>TikTok: {p.tiktok.error}</div>}</td>
                 <td>{p.kind === "CAROUSEL" ? `Carrossel (${p.items.length})` : p.kind === "REELS" ? "Reels" : "Imagem"}</td>
                 <td className="muted" style={{ whiteSpace: "nowrap" }}>{(p.published_at || p.scheduled_at) ? new Date(p.published_at || p.scheduled_at!).toLocaleString("pt-BR") : "-"}</td>
                 <td>
@@ -226,7 +247,7 @@ export default function Posts() {
                 </td>
               </tr>
             ))}
-            {!posts.length && <tr><td colSpan={6} className="muted" style={{ textAlign: "center", padding: 30 }}>Nenhuma postagem ainda.</td></tr>}
+            {!posts.length && <tr><td colSpan={7} className="muted" style={{ textAlign: "center", padding: 30 }}>Nenhuma postagem ainda.</td></tr>}
           </tbody>
         </table>
       </div>

@@ -10,7 +10,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   const { sb, user } = await requireUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const { error } = await sb.from("posts")
-    .update({ status: "scheduled", scheduled_at: new Date().toISOString(), error: null, containers: {} })
+    .update({ status: "scheduled", scheduled_at: new Date().toISOString(), error: null, containers: {}, tiktok: {} })
     .eq("id", id).neq("status", "publishing").neq("status", "published");
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   const r = await runDue();

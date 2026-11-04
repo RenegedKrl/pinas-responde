@@ -5,7 +5,7 @@ export default function Privacidade() {
   return (
     <main className="main" style={{ margin: "0 auto" }}>
       <h1>Política de Privacidade</h1>
-      <p>O Pinas Responde automatiza respostas a comentários e mensagens diretas em contas profissionais do Instagram, a pedido do dono da conta.</p>
+      <p>O Pinas Responde automatiza respostas a comentários e mensagens diretas em contas profissionais do Instagram e publica no Instagram e no TikTok o conteúdo agendado pelo dono da conta.</p>
       <h2>Dados coletados</h2>
       <p>Coletamos o identificador e o nome de usuário de quem comenta ou envia mensagem, o texto do comentário e o histórico de mensagens enviadas pela automação. O token de acesso da conta conectada é guardado criptografado.</p>
       <h2>Uso</h2>

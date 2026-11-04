@@ -1,6 +1,7 @@
 import { accountByUser } from "./accounts";
 import { graph, igFetch } from "./instagram";
 import { supabaseAdmin } from "./supabase-server";
+import { ttStart, ttStatus, ttToken } from "./tiktok";
 
 // Opções do Reels ficam no próprio item (sem migração no banco)
 export interface PostItem { url: string; type: "image" | "video"; cover?: string; thumb_offset?: number; share_to_feed?: boolean }
@@ -9,6 +10,8 @@ export interface Post {
   items: PostItem[]; caption: string; scheduled_at: string | null; status: string;
   containers: { children?: string[]; parent?: string };
   automation: Record<string, any> | null;
+  targets?: string[]; ig_media_id?: string | null; error?: string | null;
+  tiktok?: { status?: string; publish_id?: string; error?: string };
 }
 
 type Acc = NonNullable<Awaited<ReturnType<typeof accountByUser>>>;
@@ -89,7 +92,7 @@ export async function advance(p: Post): Promise<"published" | "waiting"> {
   const pub = await post<{ id: string }>(acc, `${ig}/media_publish`, { creation_id: c.parent });
   const info = await get<{ permalink?: string }>(acc, pub.id, "permalink").catch(() => ({ permalink: undefined }));
   await save(p.id, {
-    status: "published", ig_media_id: pub.id, permalink: info.permalink ?? null,
+    ig_media_id: pub.id, permalink: info.permalink ?? null,
     published_at: new Date().toISOString(), error: null,
   });
 
@@ -113,7 +116,25 @@ export async function advance(p: Post): Promise<"published" | "waiting"> {
   return "published";
 }
 
-// Processa tudo que está vencido
+// TikTok: inicia o post e depois consulta até terminar
+async function advanceTikTok(p: Post) {
+  const t = { ...(p.tiktok ?? {}) };
+  if (t.status === "published" || t.status === "error") return t;
+  const token = await ttToken(p.user_id);
+  if (!token) throw new Error("TikTok não conectado");
+  if (!t.publish_id) {
+    t.publish_id = await ttStart(token, p);
+    t.status = "processing";
+  } else {
+    const s = await ttStatus(token, t.publish_id);
+    if (s.status === "PUBLISH_COMPLETE") t.status = "published";
+    else if (s.status === "FAILED") { t.status = "error"; t.error = s.fail_reason ?? "falhou"; }
+  }
+  await save(p.id, { tiktok: t });
+  return t;
+}
+
+// Processa tudo que está vencido (Instagram e/ou TikTok)
 export async function runDue(limitMs = 50_000) {
   const start = Date.now();
   const { data } = await supabaseAdmin().from("posts").select("*")
@@ -126,11 +147,32 @@ export async function runDue(limitMs = 50_000) {
     const { data: lock } = await supabaseAdmin().from("posts")
       .update({ updated_at: new Date().toISOString() }).eq("id", p.id).eq("updated_at", (p as any).updated_at).select("id");
     if (!lock?.length) continue;
-    try {
-      out[p.id] = await advance(p);
-    } catch (e: any) {
-      out[p.id] = "error";
-      await save(p.id, { status: "error", error: String(e.message).slice(0, 500) });
+    const targets = p.targets?.length ? p.targets : ["instagram"];
+
+    // Instagram
+    let igDone = !targets.includes("instagram") || !!p.ig_media_id || !!p.error;
+    let igErr = p.error ?? null;
+    if (!igDone) {
+      try { igDone = (await advance(p)) === "published"; }
+      catch (e: any) { igDone = true; igErr = String(e.message).slice(0, 500); await save(p.id, { error: igErr }); }
+    }
+
+    // TikTok
+    let tt = p.tiktok ?? {};
+    if (targets.includes("tiktok")) {
+      try { tt = await advanceTikTok(p); }
+      catch (e: any) { tt = { ...tt, status: "error", error: String(e.message).slice(0, 500) }; await save(p.id, { tiktok: tt }); }
+    }
+    const ttDone = !targets.includes("tiktok") || tt.status === "published" || tt.status === "error";
+
+    if (igDone && ttDone) {
+      const okIg = targets.includes("instagram") && !igErr;
+      const okTt = targets.includes("tiktok") && tt.status === "published";
+      await save(p.id, { status: okIg || okTt ? "published" : "error", published_at: new Date().toISOString() });
+      out[p.id] = okIg || okTt ? "published" : "error";
+    } else {
+      if (p.status !== "publishing") await save(p.id, { status: "publishing" });
+      out[p.id] = "waiting";
     }
   }
   return out;
