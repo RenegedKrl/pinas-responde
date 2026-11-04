@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import PostPreview from "@/components/PostPreview";
 
 interface Item { url: string; type: "image" | "video" }
 interface Post {
@@ -47,6 +48,7 @@ export default function Posts() {
   const [link, setLink] = useState("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState<Post | null>(null);
 
   async function load() {
     const { data } = await sb.from("posts").select("*").order("created_at", { ascending: false }).limit(50);
@@ -158,10 +160,10 @@ export default function Posts() {
           <tbody>
             {posts.map((p) => (
               <tr key={p.id}>
-                <td style={{ width: 56 }}>{p.items[0] && (p.items[0].type === "video"
+                <td style={{ width: 56, cursor: "pointer" }} title="Ver cards" onClick={() => setOpen(p)}>{p.items[0] && (p.items[0].type === "video"
                   ? <video src={p.items[0].url} muted width={44} height={55} style={{ objectFit: "cover", borderRadius: 6 }} />
                   : <img src={p.items[0].url} alt="" width={44} height={55} style={{ objectFit: "cover", borderRadius: 6 }} />)}</td>
-                <td className="muted">{p.caption.slice(0, 70)}{p.automation?.keywords?.[0] && <div className="chip" style={{ marginTop: 4 }}>CTA: {p.automation.keywords[0]}</div>}</td>
+                <td className="muted" style={{ cursor: "pointer" }} onClick={() => setOpen(p)}>{p.caption.slice(0, 70)}{p.automation?.keywords?.[0] && <div className="chip" style={{ marginTop: 4 }}>CTA: {p.automation.keywords[0]}</div>}</td>
                 <td>{p.kind === "CAROUSEL" ? `Carrossel (${p.items.length})` : p.kind === "REELS" ? "Reels" : "Imagem"}</td>
                 <td className="muted" style={{ whiteSpace: "nowrap" }}>{(p.published_at || p.scheduled_at) ? new Date(p.published_at || p.scheduled_at!).toLocaleString("pt-BR") : "-"}</td>
                 <td>
@@ -169,6 +171,7 @@ export default function Posts() {
                   {p.error && <div style={{ color: "var(--err)", fontSize: 12, maxWidth: 260 }}>{p.error}</div>}
                 </td>
                 <td className="row" style={{ gap: 4 }}>
+                  <button className="btn btn-sm" onClick={() => setOpen(p)}>Ver cards</button>
                   {p.permalink && <a className="btn btn-sm" href={p.permalink} target="_blank" rel="noreferrer">Ver post</a>}
                   {["draft", "scheduled", "error"].includes(p.status) && <button className="btn btn-sm" onClick={() => act(p, "now")}>Publicar agora</button>}
                   {p.status === "scheduled" && <button className="btn btn-sm" onClick={() => act(p, "draft")}>Cancelar</button>}
@@ -180,6 +183,7 @@ export default function Posts() {
           </tbody>
         </table>
       </div>
+      {open && <PostPreview post={open} onClose={() => setOpen(null)} />}
     </>
   );
 }
