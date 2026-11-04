@@ -12,7 +12,7 @@ export const viaApp = (url: string) =>
 
 export function ttAuthorizeUrl(state: string) {
   const q = new URLSearchParams({
-    client_key: process.env.TIKTOK_CLIENT_KEY ?? "", scope: TT_SCOPES, response_type: "code",
+    client_key: (process.env.TIKTOK_CLIENT_KEY ?? "").trim(), scope: TT_SCOPES, response_type: "code",
     redirect_uri: redirect(), state,
   });
   return `https://www.tiktok.com/v2/auth/authorize/?${q}`;
@@ -22,7 +22,7 @@ async function oauth(params: Record<string, string>) {
   const r = await fetch(`${API}/oauth/token/`, {
     method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
-      client_key: process.env.TIKTOK_CLIENT_KEY ?? "", client_secret: process.env.TIKTOK_CLIENT_SECRET ?? "", ...params,
+      client_key: (process.env.TIKTOK_CLIENT_KEY ?? "").trim(), client_secret: (process.env.TIKTOK_CLIENT_SECRET ?? "").trim(), ...params,
     }),
   });
   const j = await r.json();
