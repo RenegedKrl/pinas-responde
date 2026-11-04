@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/supabase-server";
 import DisconnectButton from "@/components/DisconnectButton";
+import TokenConnect from "@/components/TokenConnect";
 
 export const dynamic = "force-dynamic";
 
@@ -42,11 +43,13 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
             </div>
             <a className={`btn btn-sm ${expired ? "btn-primary" : ""}`} href="/api/instagram/connect">Reconectar</a>
             <DisconnectButton />
+            <TokenConnect />
           </div>
         ) : (
           <div className="row">
             <p className="muted" style={{ flex: 1, margin: 0 }}>Conecte sua conta profissional para começar.</p>
             <a className="btn btn-primary" href="/api/instagram/connect">Conectar Instagram</a>
+            <TokenConnect />
           </div>
         )}
       </div>
