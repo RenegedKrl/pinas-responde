@@ -2,7 +2,8 @@ import { accountByUser } from "./accounts";
 import { graph, igFetch } from "./instagram";
 import { supabaseAdmin } from "./supabase-server";
 
-export interface PostItem { url: string; type: "image" | "video" }
+// Opções do Reels ficam no próprio item (sem migração no banco)
+export interface PostItem { url: string; type: "image" | "video"; cover?: string; thumb_offset?: number; share_to_feed?: boolean }
 export interface Post {
   id: string; user_id: string; kind: "IMAGE" | "CAROUSEL" | "REELS";
   items: PostItem[]; caption: string; scheduled_at: string | null; status: string;
@@ -59,7 +60,11 @@ export async function advance(p: Post): Promise<"published" | "waiting"> {
       const it = p.items[0];
       if (!it) throw new Error("Sem mídia");
       const r = await post<{ id: string }>(acc, `${ig}/media`, p.kind === "REELS"
-        ? { media_type: "REELS", video_url: it.url, caption: p.caption }
+        ? {
+            media_type: "REELS", video_url: it.url, caption: p.caption,
+            share_to_feed: it.share_to_feed === false ? "false" : "true",
+            ...(it.cover ? { cover_url: it.cover } : it.thumb_offset != null ? { thumb_offset: String(it.thumb_offset) } : {}),
+          }
         : { image_url: it.url, caption: p.caption });
       c.children = [r.id];
       c.parent = r.id;

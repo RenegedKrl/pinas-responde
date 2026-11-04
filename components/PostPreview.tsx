@@ -62,6 +62,9 @@ export default function PostPreview({ post, onClose }: { post: P; onClose: () =>
             {when && post.status !== "draft" ? new Date(when).toLocaleString("pt-BR") : ""}
             {post.permalink && <> · <a href={post.permalink} target="_blank" rel="noreferrer" style={{ color: "var(--brand)" }}>ver no Instagram</a></>}
           </p>
+          {post.kind === "REELS" && (post.items[0] as any)?.cover && (
+            <p className="muted" style={{ fontSize: 13 }}>Capa: <img src={(post.items[0] as any).cover} alt="" width={40} height={71} style={{ objectFit: "cover", borderRadius: 4, verticalAlign: "middle" }} /></p>
+          )}
           <div style={{ whiteSpace: "pre-wrap", fontSize: 14 }}>{post.caption}</div>
 
           {a && (

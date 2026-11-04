@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import PostPreview from "@/components/PostPreview";
 
-interface Item { url: string; type: "image" | "video" }
+interface Item { url: string; type: "image" | "video"; cover?: string; thumb_offset?: number; share_to_feed?: boolean }
 interface Post {
   id: string; kind: string; items: Item[]; caption: string; scheduled_at: string | null;
   status: string; permalink: string | null; error: string | null; automation: any; published_at: string | null;
@@ -49,6 +49,22 @@ export default function Posts() {
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState<Post | null>(null);
+  // Reels: capa enviada, ou segundo do vídeo, e se aparece no feed
+  const [cover, setCover] = useState("");
+  const [offset, setOffset] = useState(0);
+  const [toFeed, setToFeed] = useState(true);
+  const isReels = items.length === 1 && items[0].type === "video";
+  const kindLabel = !items.length ? "" : items.length > 1 ? `Carrossel (${items.length})` : isReels ? "Reels" : "Post de imagem";
+
+  async function uploadCover(f: File) {
+    setBusy(true); setMsg("Enviando capa...");
+    const { data: u } = await sb.auth.getUser();
+    const path = `${u.user!.id}/posts/${Date.now()}-capa.jpg`;
+    const { error } = await sb.storage.from("media").upload(path, await toJpeg(f), { contentType: "image/jpeg" });
+    if (error) setMsg("Falha: " + error.message);
+    else { setCover(sb.storage.from("media").getPublicUrl(path).data.publicUrl); setMsg(""); }
+    setBusy(false);
+  }
 
   async function load() {
     const { data } = await sb.from("posts").select("*").order("created_at", { ascending: false }).limit(50);
@@ -94,14 +110,17 @@ export default function Posts() {
       button_label: "Quero receber",
       steps: link ? [{ type: "link", text: "Aqui está o que eu te prometi 👇", url: link, label: "Abrir" }] : [],
     } : null;
+    const final = kind === "REELS"
+      ? [{ ...items[0], share_to_feed: toFeed, ...(cover ? { cover } : { thumb_offset: Math.round(offset * 1000) }) }]
+      : items;
     const { data, error } = await sb.from("posts").insert({
-      user_id: u.user!.id, kind, items, caption,
+      user_id: u.user!.id, kind, items: final, caption,
       status: mode === "draft" ? "draft" : "scheduled",
       scheduled_at: mode === "draft" ? null : mode === "now" ? new Date().toISOString() : new Date(when).toISOString(),
       automation,
     }).select("id").single();
     if (error) return setMsg("Erro: " + error.message);
-    setItems([]); setCaption(""); setKeyword(""); setLink("");
+    setItems([]); setCaption(""); setKeyword(""); setLink(""); setCover(""); setOffset(0); setToFeed(true);
     if (mode === "now") { setMsg("Publicando..."); await fetch(`/api/posts/${data.id}/publish-now`, { method: "POST" }); setMsg(""); }
     load();
   }
@@ -137,6 +156,34 @@ export default function Posts() {
                 {it.type === "video" ? <video src={it.url} muted style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <img src={it.url} alt="" />}
               </div>
             ))}
+          </div>
+        )}
+        {kindLabel && <p className="muted" style={{ margin: "8px 0 0" }}>Vai sair como: <strong>{kindLabel}</strong></p>}
+
+        {isReels && (
+          <div className="step" style={{ marginTop: 12 }}>
+            <strong>Capa do Reels</strong>
+            <div className="row" style={{ gap: 16, alignItems: "flex-start", marginTop: 8 }}>
+              <div style={{ width: 108, aspectRatio: "9/16", background: "#000", borderRadius: 6, overflow: "hidden", flex: "0 0 auto" }}>
+                {cover
+                  ? <img src={cover} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  : <video key={offset} src={`${items[0].url}#t=${offset}`} muted preload="metadata" style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
+              </div>
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <label>Enviar uma imagem de capa (1080x1920 de preferência)</label>
+                <input type="file" accept="image/*" disabled={busy} onChange={(e) => e.target.files?.[0] && uploadCover(e.target.files[0])} />
+                {cover
+                  ? <button className="btn btn-sm" style={{ marginTop: 6 }} onClick={() => setCover("")}>Tirar capa e usar um frame do vídeo</button>
+                  : <>
+                      <label>Ou escolher o frame do vídeo: {offset.toFixed(1)}s</label>
+                      <input type="range" min={0} max={60} step={0.5} value={offset} onChange={(e) => setOffset(Number(e.target.value))} />
+                    </>}
+                <label className="row" style={{ gap: 6, marginTop: 8 }}>
+                  <input type="checkbox" checked={toFeed} onChange={(e) => setToFeed(e.target.checked)} style={{ width: "auto" }} />
+                  Mostrar também no feed do perfil
+                </label>
+              </div>
+            </div>
           </div>
         )}
         <label>Legenda</label>
