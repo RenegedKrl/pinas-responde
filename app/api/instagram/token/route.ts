@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { encrypt } from "@/lib/crypto";
-import { getMe, subscribeWebhooks } from "@/lib/instagram";
+import { getMe, isFbToken, subscribeWebhooks } from "@/lib/instagram";
 import { requireUser, supabaseAdmin } from "@/lib/supabase-server";
 
 // Conecta colando o token gerado em Meta Developers > API do Instagram > "Gerar token"
@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
         username: me.username,
         profile_picture_url: me.profile_picture_url ?? null,
         access_token: encrypt(t),
-        token_expires_at: new Date(Date.now() + 60 * 86_400_000).toISOString(), // tokens do painel valem ~60 dias; o cron renova
+        token_expires_at: new Date(Date.now() + (isFbToken(t) ? 3650 : 60) * 86_400_000).toISOString(), // token EAA (usuário do sistema) não expira
         updated_at: new Date().toISOString(),
       },
       { onConflict: "ig_user_id" }

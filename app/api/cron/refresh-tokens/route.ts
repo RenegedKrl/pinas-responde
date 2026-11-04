@@ -14,7 +14,9 @@ export async function GET(req: NextRequest) {
   let ok = 0;
   for (const a of data ?? []) {
     try {
-      const r = await refreshToken(decrypt(a.access_token));
+      const tok = decrypt(a.access_token);
+      if (!tok.startsWith("IG")) continue; // tokens EAA não precisam renovar
+      const r = await refreshToken(tok);
       await db.from("ig_accounts").update({
         access_token: encrypt(r.access_token),
         token_expires_at: new Date(Date.now() + r.expires_in * 1000).toISOString(),

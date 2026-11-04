@@ -1,5 +1,8 @@
 // Instagram API com Instagram Login (oficial, gratuita)
-const GRAPH = "https://graph.instagram.com/v23.0";
+// Tokens "IG..." (login do Instagram) usam graph.instagram.com; "EAA..." (login unificado/Facebook) usam graph.facebook.com
+const graph = (token: string) =>
+  token.startsWith("IG") ? "https://graph.instagram.com/v23.0" : "https://graph.facebook.com/v23.0";
+export const isFbToken = (token: string) => !token.startsWith("IG");
 
 export const IG_SCOPES = [
   "instagram_business_basic",
@@ -57,15 +60,32 @@ export function refreshToken(token: string) {
   );
 }
 
-export function getMe(token: string) {
-  return igFetch<{ user_id: string; username: string; profile_picture_url?: string }>(
-    `${GRAPH}/me?fields=user_id,username,profile_picture_url&access_token=${token}`
-  );
+export async function getMe(token: string): Promise<{ user_id: string; username: string; profile_picture_url?: string }> {
+  if (!isFbToken(token)) {
+    return igFetch(`${graph(token)}/me?fields=user_id,username,profile_picture_url&access_token=${token}`);
+  }
+  const g = graph(token);
+  // 1) token já é do usuário do Instagram
+  try {
+    const r = await igFetch<any>(`${g}/me?fields=id,username,profile_picture_url&access_token=${token}`);
+    if (r.username) return { user_id: r.id, username: r.username, profile_picture_url: r.profile_picture_url };
+  } catch {}
+  // 2) contas do Instagram atribuídas ao token (login unificado)
+  try {
+    const r = await igFetch<any>(`${g}/me/assigned_instagram_accounts?fields=id,username,profile_picture_url&access_token=${token}`);
+    const a = r.data?.[0];
+    if (a) return { user_id: a.id, username: a.username, profile_picture_url: a.profile_picture_url };
+  } catch {}
+  // 3) Instagram ligado a uma Página do Facebook
+  const r = await igFetch<any>(`${g}/me/accounts?fields=instagram_business_account{id,username,profile_picture_url}&access_token=${token}`);
+  const a = r.data?.find((p: any) => p.instagram_business_account)?.instagram_business_account;
+  if (!a) throw new Error("Nenhuma conta do Instagram encontrada para este token");
+  return { user_id: a.id, username: a.username, profile_picture_url: a.profile_picture_url };
 }
 
 export function subscribeWebhooks(token: string) {
   return igFetch(
-    `${GRAPH}/me/subscribed_apps?subscribed_fields=comments,messages,messaging_postbacks&access_token=${token}`,
+    `${graph(token)}/me/subscribed_apps?subscribed_fields=comments,messages,messaging_postbacks&access_token=${token}`,
     { method: "POST" }
   );
 }
@@ -80,16 +100,16 @@ export interface IgMedia {
   timestamp: string;
 }
 
-export function listMedia(token: string, after?: string) {
+export function listMedia(token: string, igUserId: string, after?: string) {
   const f = "id,caption,media_type,media_url,thumbnail_url,permalink,timestamp";
   return igFetch<{ data: IgMedia[]; paging?: { cursors?: { after?: string }; next?: string } }>(
-    `${GRAPH}/me/media?fields=${f}&limit=24${after ? `&after=${after}` : ""}&access_token=${token}`
+    `${graph(token)}/${isFbToken(token) ? igUserId : "me"}/media?fields=${f}&limit=24${after ? `&after=${after}` : ""}&access_token=${token}`
   );
 }
 
 // Resposta pública ao comentário
 export function replyToComment(token: string, commentId: string, message: string) {
-  return igFetch(`${GRAPH}/${commentId}/replies`, {
+  return igFetch(`${graph(token)}/${commentId}/replies`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify({ message }),
@@ -99,7 +119,7 @@ export function replyToComment(token: string, commentId: string, message: string
 type Recipient = { id: string } | { comment_id: string };
 
 export function sendMessage(token: string, igUserId: string, recipient: Recipient, message: object) {
-  return igFetch(`${GRAPH}/${igUserId}/messages`, {
+  return igFetch(`${graph(token)}/${igUserId}/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify({ recipient, message }),
