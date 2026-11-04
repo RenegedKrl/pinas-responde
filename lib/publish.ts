@@ -1,0 +1,132 @@
+import { accountByUser } from "./accounts";
+import { graph, igFetch } from "./instagram";
+import { supabaseAdmin } from "./supabase-server";
+
+export interface PostItem { url: string; type: "image" | "video" }
+export interface Post {
+  id: string; user_id: string; kind: "IMAGE" | "CAROUSEL" | "REELS";
+  items: PostItem[]; caption: string; scheduled_at: string | null; status: string;
+  containers: { children?: string[]; parent?: string };
+  automation: Record<string, any> | null;
+}
+
+type Acc = NonNullable<Awaited<ReturnType<typeof accountByUser>>>;
+
+async function post<T = any>(acc: Acc, path: string, params: Record<string, string>) {
+  return igFetch<T>(`${graph(acc.token)}/${path}`, {
+    method: "POST",
+    body: new URLSearchParams({ ...params, access_token: acc.token }),
+  });
+}
+const get = <T = any>(acc: Acc, path: string, fields: string) =>
+  igFetch<T>(`${graph(acc.token)}/${path}?fields=${fields}&access_token=${acc.token}`);
+
+async function status(acc: Acc, id: string) {
+  const r = await get<{ status_code?: string; status?: string }>(acc, id, "status_code,status");
+  if (r.status_code === "ERROR" || r.status_code === "EXPIRED") throw new Error(`Container ${id}: ${r.status ?? r.status_code}`);
+  return r.status_code ?? "FINISHED";
+}
+
+// Quanto ainda pode publicar hoje (também serve para testar a permissão instagram_content_publish)
+export async function publishingLimit(acc: Acc) {
+  return get<{ data: { quota_usage: number; config?: { quota_total: number } }[] }>(
+    acc, `${acc.ig_user_id}/content_publishing_limit`, "quota_usage,config");
+}
+
+async function save(id: string, patch: Record<string, unknown>) {
+  await supabaseAdmin().from("posts").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id);
+}
+
+// Avança a publicação o quanto der. Vídeos levam tempo: o cron chama de novo no minuto seguinte.
+export async function advance(p: Post): Promise<"published" | "waiting"> {
+  const acc = await accountByUser(p.user_id);
+  if (!acc) throw new Error("Instagram não conectado");
+  const ig = acc.ig_user_id;
+  const c = { ...p.containers };
+
+  // 1) containers dos itens
+  if (!c.children) {
+    if (p.kind === "CAROUSEL") {
+      if (p.items.length < 2 || p.items.length > 10) throw new Error("Carrossel precisa de 2 a 10 itens");
+      c.children = [];
+      for (const it of p.items) {
+        const r = await post<{ id: string }>(acc, `${ig}/media`, it.type === "video"
+          ? { media_type: "VIDEO", video_url: it.url, is_carousel_item: "true" }
+          : { image_url: it.url, is_carousel_item: "true" });
+        c.children.push(r.id);
+      }
+    } else {
+      const it = p.items[0];
+      if (!it) throw new Error("Sem mídia");
+      const r = await post<{ id: string }>(acc, `${ig}/media`, p.kind === "REELS"
+        ? { media_type: "REELS", video_url: it.url, caption: p.caption }
+        : { image_url: it.url, caption: p.caption });
+      c.children = [r.id];
+      c.parent = r.id;
+    }
+    await save(p.id, { containers: c, status: "publishing" });
+  }
+
+  // 2) espera os itens processarem
+  for (const id of c.children) if ((await status(acc, id)) !== "FINISHED") return "waiting";
+
+  // 3) container do carrossel
+  if (!c.parent) {
+    const r = await post<{ id: string }>(acc, `${ig}/media`, {
+      media_type: "CAROUSEL", children: c.children.join(","), caption: p.caption,
+    });
+    c.parent = r.id;
+    await save(p.id, { containers: c });
+  }
+  if ((await status(acc, c.parent)) !== "FINISHED") return "waiting";
+
+  // 4) publica
+  const pub = await post<{ id: string }>(acc, `${ig}/media_publish`, { creation_id: c.parent });
+  const info = await get<{ permalink?: string }>(acc, pub.id, "permalink").catch(() => ({ permalink: undefined }));
+  await save(p.id, {
+    status: "published", ig_media_id: pub.id, permalink: info.permalink ?? null,
+    published_at: new Date().toISOString(), error: null,
+  });
+
+  // 5) cria a automação do CTA já ligada ao post novo
+  if (p.automation) {
+    const a = p.automation;
+    await supabaseAdmin().from("automations").insert({
+      user_id: p.user_id,
+      folder_id: a.folder_id ?? null,
+      name: a.name ?? `Post ${new Date().toLocaleDateString("pt-BR")}`,
+      active: true,
+      post_ids: [pub.id],
+      post_previews: [{ id: pub.id, caption: p.caption.slice(0, 80) }],
+      keywords: a.keywords ?? [],
+      comment_replies: a.comment_replies ?? ["Te mandei no direct! 📩"],
+      welcome_message: a.welcome_message ?? "Oi! Vi seu comentário. Clica no botão abaixo que eu te envio 👇",
+      button_label: a.button_label ?? "Quero receber",
+      steps: a.steps ?? [],
+    });
+  }
+  return "published";
+}
+
+// Processa tudo que está vencido
+export async function runDue(limitMs = 50_000) {
+  const start = Date.now();
+  const { data } = await supabaseAdmin().from("posts").select("*")
+    .in("status", ["scheduled", "publishing"]).lte("scheduled_at", new Date().toISOString())
+    .order("scheduled_at").limit(10);
+  const out: Record<string, string> = {};
+  for (const p of (data as Post[]) ?? []) {
+    if (Date.now() - start > limitMs) break;
+    // trava simples: só um tick por vez mexe no mesmo post
+    const { data: lock } = await supabaseAdmin().from("posts")
+      .update({ updated_at: new Date().toISOString() }).eq("id", p.id).eq("updated_at", (p as any).updated_at).select("id");
+    if (!lock?.length) continue;
+    try {
+      out[p.id] = await advance(p);
+    } catch (e: any) {
+      out[p.id] = "error";
+      await save(p.id, { status: "error", error: String(e.message).slice(0, 500) });
+    }
+  }
+  return out;
+}

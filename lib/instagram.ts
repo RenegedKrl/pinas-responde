@@ -1,6 +1,6 @@
 // Instagram API com Instagram Login (oficial, gratuita)
 // Tokens "IG..." (login do Instagram) usam graph.instagram.com; "EAA..." (login unificado/Facebook) usam graph.facebook.com
-const graph = (token: string) =>
+export const graph = (token: string) =>
   token.startsWith("IG") ? "https://graph.instagram.com/v23.0" : "https://graph.facebook.com/v23.0";
 export const isFbToken = (token: string) => !token.startsWith("IG");
 
@@ -25,7 +25,7 @@ export function authorizeUrl(state: string) {
   return `https://www.instagram.com/oauth/authorize?${p}`;
 }
 
-async function igFetch<T = any>(url: string, init?: RequestInit): Promise<T> {
+export async function igFetch<T = any>(url: string, init?: RequestInit): Promise<T> {
   const r = await fetch(url, { ...init, cache: "no-store" });
   const j = await r.json().catch(() => ({}));
   if (!r.ok || j.error) {

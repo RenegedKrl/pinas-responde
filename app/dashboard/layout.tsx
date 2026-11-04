@@ -12,6 +12,7 @@ export default async function DashLayout({ children }: { children: React.ReactNo
         <div className="logo">Pinas Responde</div>
         <Link href="/dashboard">Início</Link>
         <Link href="/dashboard/automations">Automações</Link>
+        <Link href="/dashboard/posts">Postagens</Link>
         <Link href="/dashboard/contacts">Contatos</Link>
         <Link href="/dashboard/logs">Atividade</Link>
         <div style={{ flex: 1 }} />
