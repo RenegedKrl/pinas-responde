@@ -59,6 +59,17 @@ export default function Automations() {
     load();
   }
 
+  const [backfill, setBackfill] = useState("");
+  async function runBackfill() {
+    setBackfill("Procurando comentários...");
+    const r = await fetch("/api/backfill", { method: "POST" });
+    const j = await r.json();
+    setBackfill(r.ok
+      ? `${j.found} comentário(s) com palavra-chave · ${j.sent} respondido(s) agora · ${j.alreadyReplied} já respondidos · ${j.tooOld} com mais de 7 dias (a Meta não deixa mandar direct)`
+      : "Erro: " + (j.error ?? r.status));
+    load();
+  }
+
   const shown = items.filter((a) =>
     folder === "all" ? true : folder === "none" ? !a.folder_id : a.folder_id === folder);
 
@@ -66,9 +77,13 @@ export default function Automations() {
     <>
       <div className="row" style={{ justifyContent: "space-between", marginBottom: 14 }}>
         <h1 style={{ margin: 0 }}>Automações</h1>
-        <button className="btn btn-primary" onClick={newAutomation}>+ Nova automação</button>
+        <div className="row">
+          <button className="btn" onClick={runBackfill}>Responder comentários antigos</button>
+          <button className="btn btn-primary" onClick={newAutomation}>+ Nova automação</button>
+        </div>
       </div>
 
+      {backfill && <div className="alert alert-ok">{backfill}</div>}
       <div className="row" style={{ marginBottom: 16 }}>
         <button className={`btn btn-sm ${folder === "all" ? "btn-primary" : ""}`} onClick={() => setFolder("all")}>Todas</button>
         <button className={`btn btn-sm ${folder === "none" ? "btn-primary" : ""}`} onClick={() => setFolder("none")}>Sem pasta</button>

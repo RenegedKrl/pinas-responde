@@ -153,3 +153,25 @@ export const msg = {
     attachment: { type, payload: { url } },
   }),
 };
+
+export interface IgComment {
+  id: string;
+  text?: string;
+  timestamp: string;
+  username?: string;
+  from?: { id: string; username?: string };
+  replies?: { data: { from?: { id: string } }[] };
+}
+
+// Comentários de um post (com respostas, para saber se já respondemos)
+export async function listComments(token: string, mediaId: string) {
+  const f = "id,text,timestamp,username,from,replies{from}";
+  const all: IgComment[] = [];
+  let url: string | undefined = `${graph(token)}/${mediaId}/comments?fields=${f}&limit=50&access_token=${token}`;
+  for (let i = 0; url && i < 20; i++) {
+    const r: { data: IgComment[]; paging?: { next?: string } } = await igFetch(url);
+    all.push(...r.data);
+    url = r.paging?.next;
+  }
+  return all;
+}
