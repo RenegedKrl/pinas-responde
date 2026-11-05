@@ -39,7 +39,14 @@ async function call<T = any>(token: string, path: string, body?: unknown) {
     body: JSON.stringify(body ?? {}),
   });
   const j = await r.json().catch(() => ({}));
-  if (j.error?.code && j.error.code !== "ok") throw new Error(`TikTok ${path}: ${j.error.message || j.error.code}`);
+  if (j.error?.code && j.error.code !== "ok") {
+    const code = j.error.code;
+    const msg = j.error.message || "";
+    if (code === "unaudited_client_can_only_post_to_private_accounts" || msg.includes("content-sharing-guidelines")) {
+      throw new Error("App TikTok em modo de testes (não auditado): o TikTok exige que a conta no celular esteja como 'Conta Privada' e o post como 'Privado (SELF_ONLY)'. Para postar em contas públicas, o app precisa passar na auditoria do TikTok Developer.");
+    }
+    throw new Error(`TikTok ${path}: ${msg || code}`);
+  }
   if (!r.ok) throw new Error(`TikTok ${path}: HTTP ${r.status}`);
   return j.data as T;
 }
@@ -74,9 +81,17 @@ export async function ttToken(userId: string) {
 
 // Enquanto o app não passa na auditoria do TikTok, só dá para postar como privado
 async function privacy(token: string) {
-  const info = await call<{ privacy_level_options: string[] }>(token, "post/publish/creator_info/query/");
-  const want = process.env.TIKTOK_PUBLIC === "1" ? "PUBLIC_TO_EVERYONE" : "SELF_ONLY";
-  return info.privacy_level_options.includes(want) ? want : info.privacy_level_options.at(-1) ?? "SELF_ONLY";
+  try {
+    const info = await call<{ privacy_level_options: string[] }>(token, "post/publish/creator_info/query/");
+    const opts = info?.privacy_level_options ?? [];
+    if (process.env.TIKTOK_PUBLIC === "1" && opts.includes("PUBLIC_TO_EVERYONE")) {
+      return "PUBLIC_TO_EVERYONE";
+    }
+    if (opts.includes("SELF_ONLY")) return "SELF_ONLY";
+    return opts[0] ?? "SELF_ONLY";
+  } catch {
+    return "SELF_ONLY";
+  }
 }
 
 export async function ttStart(token: string, p: { items: { url: string; type: string; thumb_offset?: number }[]; caption: string }) {
