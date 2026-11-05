@@ -8,7 +8,7 @@ interface P {
 }
 
 // Janela que mostra o carrossel como no Instagram: cards, legenda e automação do CTA
-export default function PostPreview({ post, onClose }: { post: P; onClose: () => void }) {
+export default function PostPreview({ post, onClose, onEdit }: { post: P; onClose: () => void; onEdit?: () => void }) {
   const [i, setI] = useState(0);
   const n = post.items.length;
   const go = (d: number) => setI((x) => Math.min(n - 1, Math.max(0, x + d)));
@@ -33,7 +33,12 @@ export default function PostPreview({ post, onClose }: { post: P; onClose: () =>
       <div onClick={(e) => e.stopPropagation()} className="card" style={{ maxWidth: 480, margin: "0 auto", padding: 0, overflow: "hidden" }}>
         <div className="row" style={{ justifyContent: "space-between", padding: "12px 16px" }}>
           <strong>{post.kind === "CAROUSEL" ? `Carrossel · ${i + 1}/${n}` : post.kind === "REELS" ? "Reels" : "Imagem"}</strong>
-          <button className="btn btn-sm" onClick={onClose}>Fechar ✕</button>
+          <div className="row" style={{ gap: 6 }}>
+            {onEdit && ["draft", "scheduled", "error"].includes(post.status) && (
+              <button className="btn btn-sm" onClick={onEdit}>✏️ Editar</button>
+            )}
+            <button className="btn btn-sm" onClick={onClose}>Fechar ✕</button>
+          </div>
         </div>
 
         <div style={{ position: "relative", background: "#000", aspectRatio: "4/5" }}
