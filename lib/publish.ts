@@ -1,5 +1,5 @@
 import { accountByUser } from "./accounts";
-import { graph, igFetch } from "./instagram";
+import { commentOnMedia, graph, igFetch } from "./instagram";
 import { supabaseAdmin } from "./supabase-server";
 import { ttStart, ttStatus, ttToken } from "./tiktok";
 
@@ -10,6 +10,8 @@ export interface Post {
   items: PostItem[]; caption: string; scheduled_at: string | null; status: string;
   containers: { children?: string[]; parent?: string };
   automation: Record<string, any> | null;
+  first_comment?: string | null;
+  first_comment_id?: string | null;
   targets?: string[]; ig_media_id?: string | null; error?: string | null;
   tiktok?: { status?: string; publish_id?: string; error?: string };
 }
@@ -95,6 +97,20 @@ export async function advance(p: Post): Promise<"published" | "waiting"> {
     ig_media_id: pub.id, permalink: info.permalink ?? null,
     published_at: new Date().toISOString(), error: null,
   });
+
+  // 4.1) primeiro comentário automático (merchandising)
+  const firstComment = p.first_comment || p.automation?.first_comment;
+  if (firstComment && !p.automation?.first_comment_id) {
+    try {
+      const commentRes = await commentOnMedia(acc.token, pub.id, firstComment);
+      const updatedAuto = { ...(p.automation || {}), first_comment: firstComment, first_comment_id: commentRes.id };
+      await save(p.id, { automation: updatedAuto, first_comment: firstComment, first_comment_id: commentRes.id }).catch(() => {
+        return save(p.id, { automation: updatedAuto });
+      });
+    } catch (e: any) {
+      console.error("Erro ao postar primeiro comentário:", e?.message || e);
+    }
+  }
 
   // 5) cria a automação do CTA já ligada ao post novo
   if (p.automation) {

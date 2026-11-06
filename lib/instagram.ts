@@ -116,6 +116,15 @@ export function replyToComment(token: string, commentId: string, message: string
   });
 }
 
+// Primeiro comentário direto na mídia (post / reel / carrossel)
+export function commentOnMedia(token: string, mediaId: string, message: string) {
+  return igFetch<{ id: string }>(`${graph(token)}/${mediaId}/comments`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ message }),
+  });
+}
+
 type Recipient = { id: string } | { comment_id: string };
 
 export function sendMessage(token: string, igUserId: string, recipient: Recipient, message: object) {

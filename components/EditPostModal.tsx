@@ -67,6 +67,10 @@ export default function EditPostModal({ post, ttOk, onClose, onSaved }: EditPost
   const initialLink = post.automation?.steps?.find((s: any) => s.type === "link")?.url ?? "";
   const [keyword, setKeyword] = useState(initialKeyword);
   const [link, setLink] = useState(initialLink);
+  const initialFirstComment =
+    post.automation?.first_comment ??
+    "🚀 Gostou do conteúdo? Siga nosso perfil para acompanhar mais análises e dicas práticas! Também atuamos diretamente com gestão de tráfego pago, marketing digital e estratégias de escala para o seu negócio. Se quiser acelerar seus resultados, envie um Direct ou clique no link da bio! 📲";
+  const [firstComment, setFirstComment] = useState(initialFirstComment);
 
   // Reels cover & offset
   const firstItem = post.items?.[0];
@@ -244,7 +248,11 @@ export default function EditPostModal({ post, ttOk, onClose, onSaved }: EditPost
         targets,
         status: newStatus,
         scheduled_at: scheduledDate,
-        automation,
+        automation: {
+          ...(automation || {}),
+          ...(firstComment.trim() ? { first_comment: firstComment.trim() } : {}),
+          ...(post.automation?.first_comment_id ? { first_comment_id: post.automation.first_comment_id } : {}),
+        },
         containers: {}, // reset containers to force fresh publication containers
         error: null,
         updated_at: new Date().toISOString(),
@@ -668,6 +676,21 @@ export default function EditPostModal({ post, ttOk, onClose, onSaved }: EditPost
               Link enviado no botão dentro do direct.
             </div>
           </div>
+        </div>
+
+        {/* Section 5.1: Primeiro comentário automático */}
+        <div style={{ marginBottom: 18 }}>
+          <label style={{ fontWeight: 600, display: "flex", justifyContent: "space-between" }}>
+            <span>💬 Primeiro comentário automático (Fixar / Merchandising)</span>
+            <span className="muted" style={{ fontSize: 12 }}>Publicado logo após o post ir ao ar</span>
+          </label>
+          <textarea
+            rows={3}
+            value={firstComment}
+            placeholder="Deixe em branco se não quiser comentar automaticamente..."
+            onChange={(e) => setFirstComment(e.target.value)}
+            style={{ width: "100%", fontSize: 13, resize: "vertical", marginTop: 4 }}
+          />
         </div>
 
         {/* Section 6: Data, Hora e Status */}

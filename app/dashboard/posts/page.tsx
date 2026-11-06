@@ -121,6 +121,9 @@ function formatScheduledWhen(isoDateStr: string | null): {
   };
 }
 
+const DEFAULT_FIRST_COMMENT =
+  "🚀 Gostou do conteúdo? Siga nosso perfil para acompanhar mais análises e dicas práticas! Também atuamos diretamente com gestão de tráfego pago, marketing digital e estratégias de escala para o seu negócio. Se quiser acelerar seus resultados, envie um Direct ou clique no link da bio! 📲";
+
 export default function Posts() {
   const sb = supabaseBrowser();
   const [posts, setPosts] = useState<Post[]>([]);
@@ -132,6 +135,7 @@ export default function Posts() {
   const [when, setWhen] = useState(localInput(new Date(Date.now() + 3600_000)));
   const [keyword, setKeyword] = useState("");
   const [link, setLink] = useState("");
+  const [firstComment, setFirstComment] = useState(DEFAULT_FIRST_COMMENT);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   const [cover, setCover] = useState("");
@@ -290,7 +294,10 @@ export default function Posts() {
             : mode === "now"
             ? new Date().toISOString()
             : new Date(when).toISOString(),
-        automation,
+        automation: {
+          ...(automation || {}),
+          ...(firstComment.trim() ? { first_comment: firstComment.trim() } : {}),
+        },
       })
       .select("id")
       .single();
@@ -300,6 +307,7 @@ export default function Posts() {
     setCaption("");
     setKeyword("");
     setLink("");
+    setFirstComment(DEFAULT_FIRST_COMMENT);
     setCover("");
     setOffset(0);
     setToFeed(true);
@@ -670,6 +678,20 @@ export default function Posts() {
                 placeholder="Legenda da postagem..."
                 onChange={(e) => setCaption(e.target.value)}
               />
+
+              <div style={{ marginTop: 12 }}>
+                <label style={{ margin: "0 0 4px", display: "flex", justifyContent: "space-between" }}>
+                  <span>💬 Primeiro comentário automático (Fixar / Merchandising)</span>
+                  <span className="muted" style={{ fontSize: 11 }}>Publicado logo após o post ir ao ar</span>
+                </label>
+                <textarea
+                  rows={3}
+                  value={firstComment}
+                  placeholder="Deixe em branco se não quiser comentar automaticamente..."
+                  onChange={(e) => setFirstComment(e.target.value)}
+                  style={{ width: "100%", fontSize: 13, resize: "vertical" }}
+                />
+              </div>
 
               <div className="grid grid-4" style={{ marginTop: 10 }}>
                 <div>
